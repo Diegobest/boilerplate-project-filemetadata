@@ -15,19 +15,27 @@ app.use(express.static('public'));
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-});
+})
+
 
 // Schemas and Models
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
+  exercises: [{
+    description: { type: String, required: true },
+    duration: { type: Number, required: true },
+    date: { type: String },
+  }],
 });
 
+
 const exerciseSchema = new mongoose.Schema({
-  userId: { type: String, required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   description: { type: String, required: true },
   duration: { type: Number, required: true },
   date: { type: String },
 });
+
 
 const User = mongoose.model('User', userSchema);
 const Exercise = mongoose.model('Exercise', exerciseSchema);
@@ -66,43 +74,41 @@ app.get('/api/users', async (req, res) => {
 
 // Add exercise
 app.post('/api/users/:_id/exercises', async (req, res) => {
-  const { _id } = req.params; // Extract user ID from the route
-  const { description, duration, date } = req.body; // Extract data from form body
+  const { _id } = req.params;
+  const { description, duration, date } = req.body;
 
-  // Validate required fields
   if (!description || !duration) {
     return res.status(400).json({ error: 'Description and duration are required' });
   }
 
   try {
-    // Find user by ID
+    // Find the user by ID
     const user = await User.findById(_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Prepare the exercise object
-    const exercise = {
+    // Format the date
+    const formattedDate = date ? new Date(date).toDateString() : new Date().toDateString();
+
+    // Add exercise to user's exercises array
+    user.exercises.push({
       description,
-      duration: Number(duration), // Ensure duration is a number
-      date: date ? new Date(date).toDateString() : new Date().toDateString(),
-    };
+      duration: Number(duration),
+      date: formattedDate,
+    });
+    await user.save();
 
-    // Add exercise to user's log
-    user.exercises.push(exercise);
-
-    // Save updated user
-    const updatedUser = await user.save();
-
-    // Respond with the updated data
+    // Respond with the expected structure
     res.json({
-      username: updatedUser.username,
-      _id: updatedUser._id,
-      description: exercise.description,
-      duration: exercise.duration,
-      date: exercise.date,
+      username: user.username,
+      description,
+      duration: Number(duration),
+      date: formattedDate,
+      _id: user._id,
     });
   } catch (error) {
+    console.error('Error in POST /api/users/:_id/exercises:', error);
     res.status(500).json({ error: 'Failed to add exercise' });
   }
 });
@@ -114,13 +120,20 @@ app.get('/api/users/:_id/logs', async (req, res) => {
   const { from, to, limit } = req.query;
 
   try {
+    // Find the user by ID
     const user = await User.findById(_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    let logs = await Exercise.find({ userId: _id });
+    // Retrieve exercises and format the date using toDateString
+    let logs = user.exercises.map((exercise) => ({
+      description: exercise.description,
+      duration: exercise.duration,
+      date: new Date(exercise.date).toDateString(), // Ensure the date is in the required format
+    }));
 
+    // Filter based on 'from' and 'to' query parameters
     if (from) {
       const fromDate = new Date(from);
       logs = logs.filter((log) => new Date(log.date) >= fromDate);
@@ -131,26 +144,26 @@ app.get('/api/users/:_id/logs', async (req, res) => {
       logs = logs.filter((log) => new Date(log.date) <= toDate);
     }
 
+    // Apply limit if provided
     if (limit) {
       logs = logs.slice(0, parseInt(limit));
     }
 
-    const log = logs.map((exercise) => ({
-      description: exercise.description,
-      duration: exercise.duration,
-      date: exercise.date,
-    }));
-
+    // Respond with the user object and the formatted log
     res.json({
       username: user.username,
-      count: log.length,
+      count: logs.length,
       _id: user._id,
-      log,
+      log: logs,
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Error retrieving logs' });
+  } catch (error) {
+    console.error('Error retrieving logs:', error);
+    res.status(500).json({ error: 'Failed to retrieve logs' });
   }
 });
+
+
+
 
 // Start Server
 const PORT = process.env.PORT || 3000;
