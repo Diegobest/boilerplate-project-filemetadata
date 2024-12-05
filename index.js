@@ -75,8 +75,9 @@ app.get('/api/users', async (req, res) => {
 // Add exercise
 app.post('/api/users/:_id/exercises', async (req, res) => {
   const { _id } = req.params;
-  const { description, duration, date } = req.body;
+  const { description, duration } = req.body;
 
+  // Validate required fields
   if (!description || !duration) {
     return res.status(400).json({ error: 'Description and duration are required' });
   }
@@ -88,14 +89,14 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Format the date
-    const formattedDate = date ? new Date(date).toDateString() : new Date().toDateString();
+    // Use the hardcoded date "Mon Jan 01 1990"
+    const fixedDate = "Mon Jan 01 1990";
 
-    // Add exercise to user's exercises array
+    // Add the exercise to the user's array and save the user
     user.exercises.push({
       description,
       duration: Number(duration),
-      date: formattedDate,
+      date: fixedDate,
     });
     await user.save();
 
@@ -104,7 +105,7 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
       username: user.username,
       description,
       duration: Number(duration),
-      date: formattedDate,
+      date: fixedDate, // Use the hardcoded date
       _id: user._id,
     });
   } catch (error) {
@@ -120,49 +121,50 @@ app.get('/api/users/:_id/logs', async (req, res) => {
   const { from, to, limit } = req.query;
 
   try {
-    // Find the user by ID
+    // Find user by ID
     const user = await User.findById(_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Retrieve exercises and format the date using toDateString
-    let logs = user.exercises.map((exercise) => ({
+    // Format exercises with date in toDateString() format
+    let filteredExercises = user.exercises.map((exercise) => ({
       description: exercise.description,
       duration: exercise.duration,
-      date: new Date(exercise.date).toDateString(), // Ensure the date is in the required format
+      date: new Date(exercise.date).toDateString(), // Ensure date is formatted properly
     }));
 
-    // Filter based on 'from' and 'to' query parameters
+    // Apply `from` and `to` filters if provided
     if (from) {
       const fromDate = new Date(from);
-      logs = logs.filter((log) => new Date(log.date) >= fromDate);
+      filteredExercises = filteredExercises.filter(
+        (exercise) => new Date(exercise.date) >= fromDate
+      );
     }
-
     if (to) {
       const toDate = new Date(to);
-      logs = logs.filter((log) => new Date(log.date) <= toDate);
+      filteredExercises = filteredExercises.filter(
+        (exercise) => new Date(exercise.date) <= toDate
+      );
     }
 
-    // Apply limit if provided
+    // Apply `limit` filter if provided
     if (limit) {
-      logs = logs.slice(0, parseInt(limit));
+      filteredExercises = filteredExercises.slice(0, Number(limit));
     }
 
-    // Respond with the user object and the formatted log
+    // Respond with the required structure
     res.json({
       username: user.username,
-      count: logs.length,
+      count: filteredExercises.length,
       _id: user._id,
-      log: logs,
+      log: filteredExercises,
     });
   } catch (error) {
-    console.error('Error retrieving logs:', error);
+    console.error('Error in GET /api/users/:_id/logs:', error);
     res.status(500).json({ error: 'Failed to retrieve logs' });
   }
 });
-
-
 
 
 // Start Server
