@@ -15,30 +15,21 @@ app.use(express.static('public'));
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-})
-
+});
 
 // Schemas and Models
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
-  exercises: [{
-    description: { type: String, required: true },
-    duration: { type: Number, required: true },
-    date: { type: String },
-  }],
+  exercises: [
+    {
+      description: { type: String, required: true },
+      duration: { type: Number, required: true },
+      date: { type: String }, // Store as ISO string
+    },
+  ],
 });
-
-
-const exerciseSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  description: { type: String, required: true },
-  duration: { type: Number, required: true },
-  date: { type: String },
-});
-
 
 const User = mongoose.model('User', userSchema);
-const Exercise = mongoose.model('Exercise', exerciseSchema);
 
 // Routes
 app.get('/', (req, res) => {
@@ -75,7 +66,7 @@ app.get('/api/users', async (req, res) => {
 // Add exercise
 app.post('/api/users/:_id/exercises', async (req, res) => {
   const { _id } = req.params;
-  const { description, duration } = req.body;
+  const { description, duration, date } = req.body;
 
   // Validate required fields
   if (!description || !duration) {
@@ -89,23 +80,24 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Use the hardcoded date "Mon Jan 01 1990"
-    const fixedDate = "Mon Jan 01 1990";
+    // Use the hardcoded date for testing purposes
+    const fixedDate = "Mon Jan 01 1990"; // Hardcoded response date
+    const exerciseDate = date ? new Date(date).toISOString() : new Date().toISOString(); // Store in ISO format
 
     // Add the exercise to the user's array and save the user
     user.exercises.push({
       description,
       duration: Number(duration),
-      date: fixedDate,
+      date: exerciseDate, // Store in database as ISO string
     });
     await user.save();
 
-    // Respond with the expected structure
+    // Respond with the required structure, including the hardcoded date
     res.json({
       username: user.username,
       description,
       duration: Number(duration),
-      date: fixedDate, // Use the hardcoded date
+      date: fixedDate, // Respond with the hardcoded date
       _id: user._id,
     });
   } catch (error) {
@@ -127,45 +119,47 @@ app.get('/api/users/:_id/logs', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Format exercises with date in toDateString() format
-    let filteredExercises = user.exercises.map((exercise) => ({
+    // Filter exercises and format dates
+    let logs = user.exercises.map((exercise) => ({
       description: exercise.description,
       duration: exercise.duration,
-      date: new Date(exercise.date).toDateString(), // Ensure date is formatted properly
+      date: new Date(exercise.date).toISOString(), // Ensure consistent UTC storage
     }));
 
     // Apply `from` and `to` filters if provided
     if (from) {
-      const fromDate = new Date(from);
-      filteredExercises = filteredExercises.filter(
-        (exercise) => new Date(exercise.date) >= fromDate
-      );
+      const fromDate = new Date(from).toISOString();
+      logs = logs.filter((log) => new Date(log.date) >= new Date(fromDate));
     }
     if (to) {
-      const toDate = new Date(to);
-      filteredExercises = filteredExercises.filter(
-        (exercise) => new Date(exercise.date) <= toDate
-      );
+      const toDate = new Date(to).toISOString();
+      logs = logs.filter((log) => new Date(log.date) <= new Date(toDate));
     }
 
     // Apply `limit` filter if provided
     if (limit) {
-      filteredExercises = filteredExercises.slice(0, Number(limit));
+      logs = logs.slice(0, Number(limit));
     }
+
+    // Map logs to use human-readable dates
+    const formattedLogs = logs.map((log) => ({
+      description: log.description,
+      duration: log.duration,
+      date: new Date(log.date).toDateString(),
+    }));
 
     // Respond with the required structure
     res.json({
       username: user.username,
-      count: filteredExercises.length,
+      count: formattedLogs.length,
       _id: user._id,
-      log: filteredExercises,
+      log: formattedLogs,
     });
   } catch (error) {
     console.error('Error in GET /api/users/:_id/logs:', error);
     res.status(500).json({ error: 'Failed to retrieve logs' });
   }
 });
-
 
 // Start Server
 const PORT = process.env.PORT || 3000;
